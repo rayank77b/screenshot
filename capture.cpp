@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <cxxopts.hpp>
+#include <thread>
+#include <utility>
 
 // Wir öffnen jedes /dev/video*-Device und fragen mit VIDIOC_QUERYCAP 
 // die Basis‑Capabilities ab (Treiber, Kartenname, Bus-Info, Version, 
@@ -169,7 +171,7 @@ int main(int argc, char* argv[]) {
     auto number  = result["number"].as<int>();
     auto find_on = result["find"].as<bool>(); 
     auto list_on = result["list"].as<bool>();
-    auto delay   = result["delay"].as<int>();
+    auto delay_ms   = result["delay"].as<int>();
     auto filename = result["save"].as<std::string>();
     auto camera_idx   = result["camera"].as<int>();
 
@@ -196,22 +198,39 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Ein Frame einlesen
+        auto pos = filename.rfind('.');
+        std::string name = filename;
+        std::string ext  = "jpg";
+        if (!(pos == std::string::npos || pos == 0 || pos + 1 == filename.size())) {
+            name = filename.substr(0, pos);
+            ext  = filename.substr(pos + 1);
+        }
+        
         cv::Mat frame;
-        cap >> frame;
-        if (frame.empty()) {
-            std::cerr << "Fehler: Kein Bild erhalten\n";
-            return 1;
+        for(int i=0; i<number; i++){
+            // Ein Frame einlesen
+            cap >> frame;
+            if (frame.empty()) {
+                std::cerr << "Fehler: Kein Bild erhalten\n";
+                return 1;
+            }
+            if(number==1) {
+                filename = name + "." + ext;
+            } else {
+                filename = name + std::to_string(i) + "." + ext;
+            }
+            // Bild unter dem gegebenen Dateinamen speichern
+            if (!cv::imwrite(filename, frame)) {
+                std::cerr << "Fehler: Konnte Bild nicht speichern\n";
+                return 1;
+            }
+            
+            std::cout << "Bild gespeichert als „" << filename << "“\n";
+            
+            if(number>1)
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
         }
-
-        // Bild unter dem gegebenen Dateinamen speichern
-        if (!cv::imwrite(filename, frame)) {
-            std::cerr << "Fehler: Konnte Bild nicht speichern\n";
-            return 1;
-        }
-
-        std::cout << "Bild gespeichert als „" << filename << "“\n";
     }
-    
+
     return 0;
 }
