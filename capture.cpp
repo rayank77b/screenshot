@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <cxxopts.hpp>
 
 // Wir öffnen jedes /dev/video*-Device und fragen mit VIDIOC_QUERYCAP 
 // die Basis‑Capabilities ab (Treiber, Kartenname, Bus-Info, Version, 
@@ -146,35 +147,71 @@ void listCameraInfo() {
 }
 
 int main(int argc, char* argv[]) {
-    std::vector<int> cams = findCameras();
 
-    listCameraInfo();
+    cxxopts::Options options("capture", "capture camera image");
 
-    // Gerät 0 öffnen (meist die eingebaute Webcam)
-    cv::VideoCapture cap(0);
-    if (!cap.isOpened()) {
-        std::cerr << "Fehler: Konnte Kamera nicht öffnen\n";
-        return 1;
+    options.add_options()
+        ("s,save", "save picture as xxx.png or yyy.jpg",cxxopts::value<std::string>()->default_value("snapshot.jpg"))
+        ("n,number", "number of caputured images", cxxopts::value<int>()->default_value("1"))
+        ("f,find", "find cameras indexes", cxxopts::value<bool>()->default_value("false"))
+        ("l,list", "list cameras infos", cxxopts::value<bool>()->default_value("false"))
+        ("d,delay", "time delay in milliseconds", cxxopts::value<int>()->default_value("1000"))
+        ("c,camera", "camera index, which will be captured", cxxopts::value<int>()->default_value("0"))
+        ("h,help", "Show help");
+
+    auto result = options.parse(argc, argv);
+
+    if (result.count("help")) {
+        std::cout << options.help();
+        return 0;
     }
 
-    // Ein Frame einlesen
-    cv::Mat frame;
-    cap >> frame;
-    if (frame.empty()) {
-        std::cerr << "Fehler: Kein Bild erhalten\n";
-        return 1;
+    auto number  = result["number"].as<int>();
+    auto find_on = result["find"].as<bool>(); 
+    auto list_on = result["list"].as<bool>();
+    auto delay   = result["delay"].as<int>();
+    auto filename = result["save"].as<std::string>();
+    auto camera_idx   = result["camera"].as<int>();
+
+
+    if(find_on){
+        std::vector<int> cams = findCameras();
+        if(cams.size()>0) {
+            std::cout<<"founded "<<cams.size()<<" indexes\n";
+            for(auto idx : cams) 
+                std::cout<<"found index: "<<idx<<std::endl;
+        }
     }
 
-    // Bild unter dem gegebenen Dateinamen speichern oder default
-    std::string filename = "snapshot.jpg";
-    if (argc >= 2) {
-        filename = argv[1];
-    }
-    if (!cv::imwrite(filename, frame)) {
-        std::cerr << "Fehler: Konnte Bild nicht speichern\n";
-        return 1;
+    if(list_on) {
+        listCameraInfo();
     }
 
-    std::cout << "Bild gespeichert als „" << filename << "“\n";
+    if(!find_on && !list_on) {  // take picture
+        // Gerät mit index camera_idx öffnen 
+        // (0 ist meist die eingebaute Webcam)
+        cv::VideoCapture cap(camera_idx);
+        if (!cap.isOpened()) {
+            std::cerr << "Fehler: Konnte Kamera nicht öffnen\n";
+            return 1;
+        }
+
+        // Ein Frame einlesen
+        cv::Mat frame;
+        cap >> frame;
+        if (frame.empty()) {
+            std::cerr << "Fehler: Kein Bild erhalten\n";
+            return 1;
+        }
+
+        // Bild unter dem gegebenen Dateinamen speichern
+        if (!cv::imwrite(filename, frame)) {
+            std::cerr << "Fehler: Konnte Bild nicht speichern\n";
+            return 1;
+        }
+
+        std::cout << "Bild gespeichert als „" << filename << "“\n";
+    }
+    
     return 0;
 }
